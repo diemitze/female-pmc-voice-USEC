@@ -1,0 +1,8 @@
+{
+    "manifest": [
+        {
+            "key": "voices/FemalePMC/femaleusec_voice.bundle",
+            "dependencyKeys": []
+        }
+    ]
+}

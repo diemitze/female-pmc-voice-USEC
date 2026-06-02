@@ -1,0 +1,11 @@
+{
+  "67a1c4f2e8b3d5a09f12c7b4": {
+    "locales": {
+      "en": "Female USEC"
+    },
+    "name": "FemalePMC",
+    "bundlePath": "voices/FemalePMC/femaleusec_voice.bundle",
+    "addVoiceToPlayer": true,
+    "sideSpecificVoice": ["Usec"]
+  }
+}
