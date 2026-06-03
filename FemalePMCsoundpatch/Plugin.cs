@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace FemalePMCSoundPatch
 {
-    [BepInPlugin("com.20fpsguy.femalevoice", "Female PMC Voice", "1.0.0")]
+    [BepInPlugin("com.20fpsguy.femalevoice", "Female PMC Voice", "1.0.1")]
     public class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource L;
@@ -237,7 +237,7 @@ namespace FemalePMCSoundPatch
             catch { return true; }
         }
 
-        private static bool HasBlackedLimb(Player p)
+        internal static bool HasBlackedLimb(Player p, int minCount = 1)
         {
             try
             {
@@ -247,6 +247,7 @@ namespace FemalePMCSoundPatch
                 if (m == null) return false;
                 var ps = m.GetParameters();
                 var ebpType = ps[0].ParameterType;
+                int count = 0;
                 foreach (var name in PainLimbs)
                 {
                     object bp; try { bp = Enum.Parse(ebpType, name); } catch { continue; }
@@ -254,7 +255,11 @@ namespace FemalePMCSoundPatch
                     var curO = GetMember(hv, "Current");
                     var maxO = GetMember(hv, "Maximum");
                     if (curO == null || maxO == null) continue;
-                    if (Convert.ToSingle(maxO) > 0f && Convert.ToSingle(curO) <= 0f) return true;
+                    if (Convert.ToSingle(maxO) > 0f && Convert.ToSingle(curO) <= 0f)
+                    {
+                        count++;
+                        if (count >= minCount) return true;
+                    }
                 }
                 return false;
             }
@@ -310,7 +315,7 @@ namespace FemalePMCSoundPatch
             _windedSince.TryGetValue(0, out var ws) && (Time.time - ws) >= WindedDebounce;
     }
 
-    [HarmonyPatch]
+[HarmonyPatch]
     internal static class NativeBreathDebouncePatch
     {
         static MethodBase TargetMethod()
@@ -366,26 +371,39 @@ namespace FemalePMCSoundPatch
                 }
                 if (pool.Count == 0) return;
                 if (!pool[0].name.StartsWith(Plugin.VoiceClipPrefix, StringComparison.OrdinalIgnoreCase)) return;
+                if (!Plugin.HasBlackedLimb(__instance, minCount: 2)) return;
 
                 var clip = pool[UnityEngine.Random.Range(0, pool.Count)];
+                bool local = Plugin.GetMember(__instance, "IsYourPlayer") is bool b && b;
                 Vector3 pos = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
                 if (Plugin.GetMember(__instance, "Position") is Vector3 v) pos = v;
-                PlayDeathScream(clip, pos);
+                PlayDeathScream(clip, pos, local);
             }
             catch (Exception e) { Plugin.L.LogError("[DS] " + e); }
         }
 
-        private static void PlayDeathScream(AudioClip clip, Vector3 pos)
+        private static void PlayDeathScream(AudioClip clip, Vector3 pos, bool local)
         {
             var go = new GameObject("FemalePMC_DeathScream");
             go.transform.position = pos;
             var src = go.AddComponent<AudioSource>();
             src.clip = clip;
-            src.volume = 1f;
-            src.spatialBlend = 1f;
-            src.rolloffMode = AudioRolloffMode.Linear;
-            src.minDistance = 20f;   // stays full volume within 20 m
-            src.maxDistance = 200f;  // audible up to 200 m
+            if (local)
+            {
+                // Your own death: 2D, clear but not blasting.
+                src.spatialBlend = 0f;
+                src.volume = 0.75f;
+            }
+            else
+            {
+                // A bot's death: 3D at the bot's position with natural distance falloff,
+                // so a nearby death isn't full volume and far ones fade out.
+                src.spatialBlend = 1f;
+                src.volume = 0.8f;
+                src.rolloffMode = AudioRolloffMode.Linear;
+                src.minDistance = 3f;
+                src.maxDistance = 60f;
+            }
             src.Play();
             UnityEngine.Object.Destroy(go, clip.length + 0.5f);
         }

@@ -33,13 +33,13 @@ public class FemalePMCVoiceMod(
     DatabaseServer databaseServer
 ) : IOnLoad
 {
-    // Customization item ID from db/CustomVoices/female_pmc.json (the outer JSON key).
+    // Customization item ID (outer key in db/CustomVoices/female_pmc.json).
     private const string VoiceId = "67a1c4f2e8b3d5a09f12c7b4";
 
-    // Bot type names matching the files under SPT_Data/database/bots/types/ (no .json).
+    // Bot type files under bots/types/ (no extension).
     private static readonly string[] BotTypes = ["pmcusec"];
 
-    // Weight in the USEC voice pool (~7500 per stock entry). ~1.25% spawn chance.
+    // Weight in the USEC voice pool (~1.25% spawn chance).
     private const int BotVoiceWeight = 476;
 
     public async Task OnLoad()
@@ -50,8 +50,8 @@ public class FemalePMCVoiceMod(
         AddVoiceToBotPool();
     }
 
-    // Bots/BotType/Appearance have no public indexer and don't match the JSON keys,
-    // so we reach the Voice dictionary by reflection.
+    // Bots/BotType/Appearance expose no public indexer, so reach the Voice dictionary
+    // by reflection.
     private void AddVoiceToBotPool()
     {
         try
@@ -59,7 +59,6 @@ public class FemalePMCVoiceMod(
             var botsObj = (object?)databaseServer.GetTables()?.Bots;
             if (botsObj is null) return;
 
-            // Find the internal dictionary field on the Bots wrapper class.
             var internalDict = FindDictionary(botsObj);
             if (internalDict is null) return;
 
@@ -70,7 +69,6 @@ public class FemalePMCVoiceMod(
                 var botObj = internalDict[botTypeName];
                 if (botObj is null) continue;
 
-                // Navigate: BotType → Appearance → Voice (Dictionary<string, int>)
                 var appearance = GetProp(botObj, "Appearance");
                 if (appearance is null) continue;
 
@@ -82,14 +80,12 @@ public class FemalePMCVoiceMod(
         }
         catch (Exception ex)
         {
-            // Non-fatal — voice just won't appear on bots.
             Console.WriteLine($"[FemalePMCVoice] AddVoiceToBotPool failed: {ex.Message}");
         }
     }
 
     private static IDictionary? FindDictionary(object obj)
     {
-        // The bot-type data lives in a private dictionary field on the wrapper.
         foreach (var field in obj.GetType().GetFields(BindingFlags.NonPublic | BindingFlags.Instance))
         {
             var val = field.GetValue(obj);
