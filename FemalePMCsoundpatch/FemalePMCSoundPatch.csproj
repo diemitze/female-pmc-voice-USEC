@@ -1,10 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>FemalePMCSoundPatch</AssemblyName>
     <RootNamespace>FemalePMCSoundPatch</RootNamespace>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <LangVersion>latest</LangVersion>
     <Configuration>Release</Configuration>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -18,38 +18,38 @@
 
   <ItemGroup>
     <Reference Include="Assembly-CSharp">
-      <HintPath>D:\SPT dev\EscapeFromTarkov_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>D:\SPT 4.1\EscapeFromTarkov_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Comfort">
-      <HintPath>D:\SPT dev\EscapeFromTarkov_Data\Managed\Comfort.dll</HintPath>
+      <HintPath>D:\SPT 4.1\EscapeFromTarkov_Data\Managed\Comfort.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>D:\SPT dev\EscapeFromTarkov_Data\Managed\UnityEngine.dll</HintPath>
+      <HintPath>D:\SPT 4.1\EscapeFromTarkov_Data\Managed\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>D:\SPT dev\EscapeFromTarkov_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>D:\SPT 4.1\EscapeFromTarkov_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.AudioModule">
-      <HintPath>D:\SPT dev\EscapeFromTarkov_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
+      <HintPath>D:\SPT 4.1\EscapeFromTarkov_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="BepInEx">
-      <HintPath>D:\SPT dev\BepInEx\core\BepInEx.dll</HintPath>
+      <HintPath>D:\SPT 4.1\BepInEx\core\BepInEx.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>D:\SPT dev\BepInEx\core\0Harmony.dll</HintPath>
+      <HintPath>D:\SPT 4.1\BepInEx\core\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
   <!-- Drop the built DLL straight into the client plugins folder -->
   <Target Name="Deploy" AfterTargets="Build">
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="D:\SPT dev\BepInEx\plugins" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="D:\SPT 4.1\BepInEx\plugins" />
   </Target>
 
 </Project>

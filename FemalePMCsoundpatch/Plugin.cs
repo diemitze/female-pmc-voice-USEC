@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace FemalePMCSoundPatch
 {
-    [BepInPlugin("com.20fpsguy.femalevoice", "Female PMC Voice", "1.0.2")]
+    [BepInPlugin("com.20fpsguy.femalevoice", "Female PMC Voice", "1.0.3")]
     public class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource L;
@@ -28,6 +28,8 @@ namespace FemalePMCSoundPatch
         // Debounced blacked state per id so a flickering limb-health read can't restart the loop.
         private readonly Dictionary<int, bool> _blackedState = new Dictionary<int, bool>();
         private readonly Dictionary<int, float> _blackedFlipSince = new Dictionary<int, float>();
+        private readonly Dictionary<int, bool> _legState = new Dictionary<int, bool>();
+        private readonly Dictionary<int, float> _legFlipSince = new Dictionary<int, float>();
         // Require seeing the entity healthy once before hurt breath is allowed, so the garbage
         // health that reads as "blacked" at spawn can't trigger it. Local player only.
         private readonly Dictionary<int, bool> _healthyConfirmed = new Dictionary<int, bool>();
@@ -112,11 +114,19 @@ namespace FemalePMCSoundPatch
                     // The healthy-confirmed guard is local-only. Bots are routinely first seen already
                     // injured (they fight each other / spawn into firefights); requiring a prior healthy
                     // read there left their pain breath masked by winded. Bots use the grace + debounce.
-                    bool rawBlacked = HasBlackedLimb(p);
-                    if (!rawBlacked) _healthyConfirmed[id] = true;
+                    // Coughing is the gut-wound sound and the running grunt is the leg one, so
+                    // each is gated on its own part rather than on any blacked limb.
+                    bool rawBlacked = HasBlackedPart(p, "Stomach");
+                    bool rawLeg = HasBlackedPart(p, "LeftLeg", "RightLeg");
+                    if (!rawBlacked && !rawLeg) _healthyConfirmed[id] = true;
                     bool blacked = DebounceBlacked(id, rawBlacked);
+                    bool legBlacked = DebounceLeg(id, rawLeg);
                     if (local)
-                        blacked = blacked && _healthyConfirmed.TryGetValue(id, out var hc) && hc;
+                    {
+                        bool healthySeen = _healthyConfirmed.TryGetValue(id, out var hc) && hc;
+                        blacked = blacked && healthySeen;
+                        legBlacked = legBlacked && healthySeen;
+                    }
                     bool windedRaw = IsOutOfStamina(p);
 
                     // Debounce winded so a brief stamina spike (e.g. grenade concussion) doesn't fire it.
@@ -130,8 +140,8 @@ namespace FemalePMCSoundPatch
                         // The game handles winded breath for the local player; only manage hurt here.
                         // Painkillers mask the pain, so they silence the hurt loop too.
                         want = (blacked && !winded && !HasPainkiller(p)) ? hurtClip : null;
-                        // Ouch grunts while running with a black limb, audible even under painkiller.
-                        HandleLocalHitGrunts(p, blacked);
+                        // Ouch grunts while running on a black leg, audible even under painkiller.
+                        HandleLocalHitGrunts(p, legBlacked);
                     }
                     else
                     {
@@ -154,12 +164,18 @@ namespace FemalePMCSoundPatch
 
         // Flip the blacked state only after the raw read has disagreed for Rise/Fall seconds.
         private bool DebounceBlacked(int id, bool raw)
+            => Debounce(_blackedState, _blackedFlipSince, id, raw);
+
+        private bool DebounceLeg(int id, bool raw)
+            => Debounce(_legState, _legFlipSince, id, raw);
+
+        private static bool Debounce(Dictionary<int, bool> state, Dictionary<int, float> flipSince, int id, bool raw)
         {
-            if (!_blackedState.TryGetValue(id, out var cur)) { cur = false; _blackedState[id] = false; }
-            if (raw == cur) { _blackedFlipSince.Remove(id); return cur; }
-            if (!_blackedFlipSince.TryGetValue(id, out var since)) { since = Time.time; _blackedFlipSince[id] = since; }
+            if (!state.TryGetValue(id, out var cur)) { cur = false; state[id] = false; }
+            if (raw == cur) { flipSince.Remove(id); return cur; }
+            if (!flipSince.TryGetValue(id, out var since)) { since = Time.time; flipSince[id] = since; }
             float need = raw ? BlackedRise : BlackedFall;
-            if (Time.time - since >= need) { _blackedState[id] = raw; _blackedFlipSince.Remove(id); return raw; }
+            if (Time.time - since >= need) { state[id] = raw; flipSince.Remove(id); return raw; }
             return cur;
         }
 
@@ -220,6 +236,8 @@ namespace FemalePMCSoundPatch
             _windedSince.Remove(id);
             _blackedState.Remove(id);
             _blackedFlipSince.Remove(id);
+            _legState.Remove(id);
+            _legFlipSince.Remove(id);
             _healthyConfirmed.Remove(id);
         }
 
@@ -237,6 +255,8 @@ namespace FemalePMCSoundPatch
             _windedSince.Clear();
             _blackedState.Clear();
             _blackedFlipSince.Clear();
+            _legState.Clear();
+            _legFlipSince.Clear();
             _healthyConfirmed.Clear();
             LocalSpeaker = null;
             LocalPlayer = null;
@@ -326,32 +346,36 @@ namespace FemalePMCSoundPatch
         }
 
         internal static bool HasBlackedLimb(Player p, int minCount = 1)
+            => BlackedCount(p, PainLimbs) >= minCount;
+
+        // The game ties each sound to a specific part: coughs to a blacked stomach, running
+        // grunts to a blacked leg. Counting any limb made both fire for a blacked arm too.
+        internal static bool HasBlackedPart(Player p, params string[] parts)
+            => BlackedCount(p, parts) >= 1;
+
+        private static int BlackedCount(Player p, string[] parts)
         {
             try
             {
                 var hc = GetMember(p, "HealthController");
-                if (hc == null) return false;
+                if (hc == null) return 0;
                 var m = hc.GetType().GetMethod("GetBodyPartHealth", AllInst);
-                if (m == null) return false;
+                if (m == null) return 0;
                 var ps = m.GetParameters();
                 var ebpType = ps[0].ParameterType;
                 int count = 0;
-                foreach (var name in PainLimbs)
+                foreach (var name in parts)
                 {
                     object bp; try { bp = Enum.Parse(ebpType, name); } catch { continue; }
                     object hv; try { hv = ps.Length >= 2 ? m.Invoke(hc, new object[] { bp, false }) : m.Invoke(hc, new object[] { bp }); } catch { continue; }
                     var curO = GetMember(hv, "Current");
                     var maxO = GetMember(hv, "Maximum");
                     if (curO == null || maxO == null) continue;
-                    if (Convert.ToSingle(maxO) > 0f && Convert.ToSingle(curO) <= 0f)
-                    {
-                        count++;
-                        if (count >= minCount) return true;
-                    }
+                    if (Convert.ToSingle(maxO) > 0f && Convert.ToSingle(curO) <= 0f) count++;
                 }
-                return false;
+                return count;
             }
-            catch { return false; }
+            catch { return 0; }
         }
 
         // Is the plugin currently looping a breath clip for this player?
@@ -539,7 +563,7 @@ namespace FemalePMCSoundPatch
         {
             Plugin.RaidStartTime = Time.time;
             Plugin.Instance?.ResetForNewRaid();
-            Plugin.L?.LogInfo("[Breath] Raid started; spawn-settle window begins.");
+            Plugin.L?.LogDebug("[Breath] Raid started; spawn-settle window begins.");
         }
     }
 
@@ -548,7 +572,7 @@ namespace FemalePMCSoundPatch
     {
         static MethodBase TargetMethod()
         {
-            var speakerType = AccessTools.TypeByName("PhraseSpeakerClass");
+            var speakerType = AccessTools.TypeByName("BaseSpeaker");
             if (speakerType == null) return null;
             return speakerType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
                 .FirstOrDefault(m => m.Name == "Play"
@@ -580,8 +604,9 @@ namespace FemalePMCSoundPatch
         private static MethodBase TargetMethod() => AccessTools.Method(typeof(Player), "OnDead");
 
         [HarmonyPrefix]
-        private static void Prefix(Player __instance)
+        private static void Prefix(Player __instance, out bool __state)
         {
+            __state = false;
             try
             {
                 if (__instance == null) return;
@@ -606,13 +631,13 @@ namespace FemalePMCSoundPatch
                 }
                 if (pool.Count == 0) return;
                 if (!pool[0].name.StartsWith(Plugin.VoiceClipPrefix, StringComparison.OrdinalIgnoreCase)) return;
-                if (!Plugin.HasBlackedLimb(__instance, minCount: 2)) return;
 
                 var clip = pool[UnityEngine.Random.Range(0, pool.Count)];
                 bool local = Plugin.GetMember(__instance, "IsYourPlayer") is bool b && b;
                 Vector3 pos = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
                 if (Plugin.GetMember(__instance, "Position") is Vector3 v) pos = v;
                 PlayDeathScream(clip, pos, local);
+                __state = true;
             }
             catch (Exception e) { Plugin.L.LogError("[DS] " + e); }
         }
@@ -621,8 +646,15 @@ namespace FemalePMCSoundPatch
         {
             var go = new GameObject("FemalePMC_DeathScream");
             go.transform.position = pos;
+            // Your own death tears the raid down within a second: the scene unloads and the
+            // listener gets ducked/paused, which chopped the scream off mid-vowel.
+            UnityEngine.Object.DontDestroyOnLoad(go);
             var src = go.AddComponent<AudioSource>();
             src.clip = clip;
+            src.ignoreListenerPause = true;
+            src.ignoreListenerVolume = true;
+            src.bypassListenerEffects = true;
+            src.bypassReverbZones = true;
             if (local)
             {
                 // Your own death: 2D, clear but not blasting.
@@ -639,15 +671,29 @@ namespace FemalePMCSoundPatch
                 src.maxDistance = 60f;
             }
             src.Play();
-            UnityEngine.Object.Destroy(go, clip.length + 0.5f);
+            // Destroy(go, t) runs on scaled time and the object now survives scene loads, so the
+            // teardown is driven by a real-time coroutine on the plugin instead.
+            if (Plugin.Instance != null) Plugin.Instance.StartCoroutine(CleanupScream(go, clip));
+            else UnityEngine.Object.Destroy(go, clip.length + 0.5f);
         }
 
+        // Real-time teardown: Destroy(go, t) runs on scaled time, and the object now survives
+        // scene loads, so a frozen or unloading raid would leave it behind.
+        private static IEnumerator CleanupScream(GameObject go, AudioClip clip)
+        {
+            float deadline = Time.realtimeSinceStartup + clip.length + 0.5f;
+            while (Time.realtimeSinceStartup < deadline) yield return null;
+            if (go != null) UnityEngine.Object.Destroy(go);
+        }
+
+        // Only silence the speaker when we played our own scream, otherwise this mutes the
+        // game's native death phrase and nothing is heard at all.
         [HarmonyPostfix]
-        private static void Postfix(Player __instance)
+        private static void Postfix(Player __instance, bool __state)
         {
             try
             {
-                if (__instance == null) return;
+                if (__instance == null || !__state) return;
                 var speaker = Plugin.GetMember(__instance, "Speaker");
                 if (speaker == null) return;
                 var t = speaker.GetType();

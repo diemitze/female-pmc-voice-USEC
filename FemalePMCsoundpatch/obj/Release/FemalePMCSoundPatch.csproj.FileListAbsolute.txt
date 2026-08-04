@@ -1,9 +1,0 @@
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\bin\Release\FemalePMCSoundPatch.dll
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\bin\Release\FemalePMCSoundPatch.pdb
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\obj\Release\FemalePMCSoundPatch.csproj.AssemblyReference.cache
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\obj\Release\FemalePMCSoundPatch.GeneratedMSBuildEditorConfig.editorconfig
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\obj\Release\FemalePMCSoundPatch.AssemblyInfoInputs.cache
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\obj\Release\FemalePMCSoundPatch.AssemblyInfo.cs
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\obj\Release\FemalePMCSoundPatch.csproj.CoreCompileInputs.cache
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\obj\Release\FemalePMCSoundPatch.dll
-D:\spt-scaffold\female pmc\FemalePMCsoundpatch\obj\Release\FemalePMCSoundPatch.pdb
