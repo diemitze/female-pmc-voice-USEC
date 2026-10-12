@@ -3,7 +3,8 @@ using HarmonyLib;
 using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Generators;
+using SPTarkov.Server.Core.Generators.Bot;
+using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Spt.Bots;
 using SPTarkov.Server.Core.Models.Spt.Tables;
@@ -169,7 +170,7 @@ public class FemalePmcAppearanceService(
     private static bool _dlcAvailable;
     private static List<string> _availableVoicePool = null!;
 
-    public Task OnLoad()
+    public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         _logger = logger;
         _rng = randomUtil;
@@ -204,7 +205,7 @@ public class FemalePmcAppearanceService(
 
         var postfix = new HarmonyMethod(
             AccessTools.Method(typeof(FemalePmcAppearanceService), nameof(PrepareAndGenerateBotPostfix)));
-        new Harmony("com.20fpsguy.femalevoice.appearance").Patch(target, postfix: postfix);
+        new Harmony("com.20fpsguy.femalepmcvoice.appearance").Patch(target, postfix: postfix);
 
         logger.Success("[FemalePmcAppearance] USEC female appearance completion patch applied.");
         return Task.CompletedTask;
@@ -232,12 +233,12 @@ public class FemalePmcAppearanceService(
 
     // If a generated USEC PMC has any female part, force the remaining parts to also be female.
     // Fully male bots are left alone; fully female bots need no changes.
-    private static void PrepareAndGenerateBotPostfix(ref BotBase __result, BotGenerationDetails details)
+    private static void PrepareAndGenerateBotPostfix(ref BotBase __result, BotGenerationDetails botGenerationDetails)
     {
         try
         {
             if (__result is null) return;
-            if (!details.IsPmc || details.Side != "Usec") return;
+            if (!botGenerationDetails.IsPmc || botGenerationDetails.Side != "Usec") return;
 
             var cust = __result.Customization;
             if (cust is null) return;
@@ -280,7 +281,7 @@ public class FemalePmcAppearanceService(
                 ApplyRandomUsecMix(cust);
             }
 
-            _logger.Info("[FemalePmcAppearance] Completed partial female appearance on a USEC PMC.");
+            _logger.Debug("[FemalePmcAppearance] Completed partial female appearance on a USEC PMC.");
         }
         catch (Exception e)
         {
@@ -288,7 +289,7 @@ public class FemalePmcAppearanceService(
         }
     }
 
-    private static void ApplyPredefinedSet(Customization cust)
+    private static void ApplyPredefinedSet(SPTarkov.Server.Core.Models.Eft.Common.Tables.Customization cust)
     {
         var set = _rng.GetArrayValue(PredefinedSets);
         cust.Body  = set.TopId;
@@ -296,7 +297,7 @@ public class FemalePmcAppearanceService(
         cust.Hands = set.HandsId;
     }
 
-    private static void ApplyRandomUsecMix(Customization cust)
+    private static void ApplyRandomUsecMix(SPTarkov.Server.Core.Models.Eft.Common.Tables.Customization cust)
     {
         cust.Body  = _rng.GetArrayValue(UsecTopIds);
         cust.Feet  = _rng.GetArrayValue(UsecBottomIds);
