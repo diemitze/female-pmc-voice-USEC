@@ -244,11 +244,11 @@ public class FemalePmcAppearanceService(
             if (cust is null) return;
 
             // Head can only be considered female if W.A.A.C. is loaded.
-            var headFemale  = _wacAvailable && FemaleHeadSet.Contains(cust.Head);
-            var voiceFemale = FemaleVoiceSet.Contains(cust.Voice);
-            var bodyFemale  = FemaleTopSet.Contains(cust.Body);
-            var feetFemale  = FemaleBottomSet.Contains(cust.Feet);
-            var handsFemale = FemaleHandsSet.Contains(cust.Hands);
+            var headFemale  = _wacAvailable && FemaleHeadSet.Contains(cust.Head ?? "");
+            var voiceFemale = FemaleVoiceSet.Contains(cust.Voice ?? "");
+            var bodyFemale  = FemaleTopSet.Contains(cust.Body ?? "");
+            var feetFemale  = FemaleBottomSet.Contains(cust.Feet ?? "");
+            var handsFemale = FemaleHandsSet.Contains(cust.Hands ?? "");
 
             var anyFemale = headFemale || voiceFemale || bodyFemale || feetFemale || handsFemale;
             var allFemale = headFemale && voiceFemale && bodyFemale && feetFemale && handsFemale;

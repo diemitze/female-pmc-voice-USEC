@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace FemalePMCSoundPatch
 {
-    [BepInPlugin("com.20fpsguy.femalevoice", "Female PMC Voice", "1.0.3")]
+    [BepInPlugin("com.20fpsguy.femalepmcvoice", "Female PMC Voice", "1.0.4")]
     public class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource L;
@@ -64,7 +64,7 @@ namespace FemalePMCSoundPatch
         {
             Instance = this;
             L = Logger;
-            new Harmony("com.20fpsguy.femalevoicedeathfix").PatchAll();
+            new Harmony("com.20fpsguy.femalepmcvoice.patches").PatchAll();
             L.LogInfo("Female PMC voice fixes loaded.");
         }
 

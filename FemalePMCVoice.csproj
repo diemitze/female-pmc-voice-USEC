@@ -6,7 +6,7 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <RootNamespace>FemalePMCVoice</RootNamespace>
     <AssemblyName>FemalePMCVoice</AssemblyName>
-    <Version>1.0.3</Version>
+    <Version>1.0.4</Version>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 

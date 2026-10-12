@@ -14,7 +14,7 @@ namespace FemalePMCVoice;
 
 public record ModMetadata : IModMetadata
 {
-    public string ModGuid { get; init; } = "com.20fpsguy.femalevoice";
+    public string ModGuid { get; init; } = "com.20fpsguy.femalepmcvoice";
     public string Name { get; init; } = "Female PMC Voice";
     public string Author { get; init; } = "20fpsguy";
     public SemanticVersioning.Version Version { get; init; } =
