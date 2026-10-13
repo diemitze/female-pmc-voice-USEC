@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace FemalePMCSoundPatch
 {
-    [BepInPlugin("com.20fpsguy.femalepmcvoice", "Female PMC Voice", "1.0.4")]
+    [BepInPlugin("com.20fpsguy.femalepmcvoice", "Female PMC Voice", "1.0.5")]
     public class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource L;
@@ -66,6 +66,15 @@ namespace FemalePMCSoundPatch
             L = Logger;
             new Harmony("com.20fpsguy.femalepmcvoice.patches").PatchAll();
             L.LogInfo("Female PMC voice fixes loaded.");
+        }
+
+        // A null target makes PatchAll throw and skip every patch after it, so each patch
+        // checks its own target and is skipped alone if a game update renamed it.
+        internal static bool CanPatch(MethodBase target, string patch)
+        {
+            if (target != null) return true;
+            L?.LogWarning($"{patch}: target method not found, patch skipped.");
+            return false;
         }
 
         private void Update()
@@ -285,18 +294,65 @@ namespace FemalePMCSoundPatch
             return HasActiveBreath(p) || IsInPain(p);
         }
 
+        // Lookups run every tick for every player, so resolve each (type, name) only once.
+        private static readonly Dictionary<Type, Dictionary<string, MemberInfo>> MemberCache =
+            new Dictionary<Type, Dictionary<string, MemberInfo>>();
+        private static readonly Dictionary<Type, MethodInfo> BodyPartHealthCache = new Dictionary<Type, MethodInfo>();
+        private static readonly Dictionary<Type, MethodInfo> AllEffectsCache = new Dictionary<Type, MethodInfo>();
+        private static readonly Dictionary<(Type, string), object> EnumCache = new Dictionary<(Type, string), object>();
+
+        private static MemberInfo ResolveMember(Type t, string name)
+        {
+            if (!MemberCache.TryGetValue(t, out var byName))
+                MemberCache[t] = byName = new Dictionary<string, MemberInfo>();
+            if (!byName.TryGetValue(name, out var mi))
+            {
+                mi = (MemberInfo)t.GetProperty(name, AllInst) ?? t.GetField(name, AllInst);
+                byName[name] = mi;
+            }
+            return mi;
+        }
+
         internal static object GetMember(object obj, params string[] names)
         {
             if (obj == null) return null;
             var t = obj.GetType();
             foreach (var name in names)
             {
-                var pi = t.GetProperty(name, AllInst);
-                if (pi != null) { try { return pi.GetValue(obj); } catch { } }
-                var fi = t.GetField(name, AllInst);
-                if (fi != null) { try { return fi.GetValue(obj); } catch { } }
+                var mi = ResolveMember(t, name);
+                if (mi is PropertyInfo pi) { try { return pi.GetValue(obj); } catch { } }
+                else if (mi is FieldInfo fi) { try { return fi.GetValue(obj); } catch { } }
             }
             return null;
+        }
+
+        private static MethodInfo GetBodyPartHealthMethod(object hc)
+        {
+            var t = hc.GetType();
+            if (!BodyPartHealthCache.TryGetValue(t, out var m))
+                BodyPartHealthCache[t] = m = t.GetMethod("GetBodyPartHealth", AllInst);
+            return m;
+        }
+
+        private static MethodInfo GetAllEffectsMethod(object hc)
+        {
+            var t = hc.GetType();
+            if (!AllEffectsCache.TryGetValue(t, out var m))
+                AllEffectsCache[t] = m = t.GetMethods(AllInst)
+                    .FirstOrDefault(x => x.Name == "GetAllEffects" && x.GetParameters().Length == 0);
+            return m;
+        }
+
+        // Null when the enum has no such member.
+        private static object ParseEnumCached(Type enumType, string name)
+        {
+            var key = (enumType, name);
+            if (!EnumCache.TryGetValue(key, out var v))
+            {
+                try { v = Enum.Parse(enumType, name); } catch { v = null; }
+                EnumCache[key] = v;
+            }
+            return v;
         }
 
         private static int PlayerId(Player p)
@@ -327,13 +383,13 @@ namespace FemalePMCSoundPatch
             {
                 var hc = GetMember(p, "HealthController");
                 if (hc == null) return true;
-                var m = hc.GetType().GetMethod("GetBodyPartHealth", AllInst);
+                var m = GetBodyPartHealthMethod(hc);
                 if (m == null) return true;
                 var ps = m.GetParameters();
                 var ebpType = ps[0].ParameterType;
                 foreach (var name in VitalLimbs)
                 {
-                    object bp; try { bp = Enum.Parse(ebpType, name); } catch { continue; }
+                    var bp = ParseEnumCached(ebpType, name); if (bp == null) continue;
                     object hv; try { hv = ps.Length >= 2 ? m.Invoke(hc, new object[] { bp, false }) : m.Invoke(hc, new object[] { bp }); } catch { continue; }
                     var curO = GetMember(hv, "Current");
                     var maxO = GetMember(hv, "Maximum");
@@ -359,14 +415,14 @@ namespace FemalePMCSoundPatch
             {
                 var hc = GetMember(p, "HealthController");
                 if (hc == null) return 0;
-                var m = hc.GetType().GetMethod("GetBodyPartHealth", AllInst);
+                var m = GetBodyPartHealthMethod(hc);
                 if (m == null) return 0;
                 var ps = m.GetParameters();
                 var ebpType = ps[0].ParameterType;
                 int count = 0;
                 foreach (var name in parts)
                 {
-                    object bp; try { bp = Enum.Parse(ebpType, name); } catch { continue; }
+                    var bp = ParseEnumCached(ebpType, name); if (bp == null) continue;
                     object hv; try { hv = ps.Length >= 2 ? m.Invoke(hc, new object[] { bp, false }) : m.Invoke(hc, new object[] { bp }); } catch { continue; }
                     var curO = GetMember(hv, "Current");
                     var maxO = GetMember(hv, "Maximum");
@@ -398,8 +454,8 @@ namespace FemalePMCSoundPatch
             {
                 var hc = GetMember(p, "HealthController");
                 if (hc == null) return false;
-                var m = hc.GetType().GetMethods(AllInst)
-                    .FirstOrDefault(x => x.Name == "GetAllEffects" && x.GetParameters().Length == 0);
+                var m = GetAllEffectsMethod(hc);
+
                 if (m == null) return false;
                 object res;
                 try { res = m.Invoke(hc, null); } catch { res = null; }
@@ -428,8 +484,8 @@ namespace FemalePMCSoundPatch
             {
                 var hc = GetMember(p, "HealthController");
                 if (hc == null) return false;
-                var m = hc.GetType().GetMethods(AllInst)
-                    .FirstOrDefault(x => x.Name == "GetAllEffects" && x.GetParameters().Length == 0);
+                var m = GetAllEffectsMethod(hc);
+
                 if (m == null) return false;
                 object res;
                 try { res = m.Invoke(hc, null); } catch { res = null; }
@@ -558,6 +614,8 @@ namespace FemalePMCSoundPatch
     {
         static MethodBase TargetMethod() => AccessTools.Method(typeof(GameWorld), "OnGameStarted");
 
+        static bool Prepare() => Plugin.CanPatch(TargetMethod(), nameof(GameStartedPatch));
+
         [HarmonyPostfix]
         static void Postfix()
         {
@@ -579,6 +637,8 @@ namespace FemalePMCSoundPatch
                     && m.GetParameters().Length > 0
                     && m.GetParameters()[0].ParameterType == typeof(EPhraseTrigger));
         }
+
+        static bool Prepare() => Plugin.CanPatch(TargetMethod(), nameof(NativeBreathDebouncePatch));
 
         [HarmonyPrefix]
         static bool Prefix(object __instance, EPhraseTrigger __0)
@@ -602,6 +662,8 @@ namespace FemalePMCSoundPatch
         private static readonly EPhraseTrigger[] DeathTriggers = { EPhraseTrigger.OnDeath, EPhraseTrigger.OnAgony };
 
         private static MethodBase TargetMethod() => AccessTools.Method(typeof(Player), "OnDead");
+
+        private static bool Prepare() => Plugin.CanPatch(TargetMethod(), nameof(DeathScreamPatch));
 
         [HarmonyPrefix]
         private static void Prefix(Player __instance, out bool __state)

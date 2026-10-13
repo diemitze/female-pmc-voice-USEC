@@ -44,8 +44,9 @@ public class FemalePMCVoiceMod(
     // Customization item ID (outer key in db/CustomVoices/female_pmc.json).
     private const string VoiceId = "67a1c4f2e8b3d5a09f12c7b4";
 
+    // Resolved from the DLL so a renamed mod folder still finds its config.
     private static readonly string ConfigPath = SysPath.Combine(
-        AppContext.BaseDirectory, "user", "mods", "FemalePMCVoice", "config", "config.json");
+        SysPath.GetDirectoryName(typeof(FemalePMCVoiceMod).Assembly.Location)!, "config", "config.json");
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -97,7 +98,8 @@ public class FemalePMCVoiceMod(
                 continue;
             }
 
-            var weight = Math.Round(othersTotal * share / (1d - share));
+            // At least 1, or a tiny chance on a small pool rounds to never.
+            var weight = Math.Max(1d, Math.Round(othersTotal * share / (1d - share)));
             voice[new MongoId(VoiceId)] = weight;
 
             var actual = weight / (othersTotal + weight) * 100d;
