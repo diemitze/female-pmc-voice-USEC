@@ -1,4 +1,3 @@
-using System.Reflection;
 using HarmonyLib;
 using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
@@ -9,21 +8,12 @@ using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Spt.Bots;
 using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Utils;
+using BotCustomization = SPTarkov.Server.Core.Models.Eft.Common.Tables.Customization;
 
 namespace FemalePMCVoice;
 
-/// Completes a partially-female USEC PMC's appearance into a fully-female one, so bots
-/// never show up with mixed looks (e.g. a female torso and a male head).
-///
-/// Availability is checked on the first generated bot:
-///   - W.A.A.C. is required: it is the only source of female heads, so without it any
-///     completion would leave a male head on a female body. It also provides female
-///     voices (Nadya, Penny, Lara, Zoey) and predefined full outfits.
-///   - DLC.FemaleClothes is optional and adds the USEC-only randomized clothing pool.
-///
-/// When both mods are loaded, clothing is picked 50/50 between a predefined set and a
-/// random USEC-only mix. With W.A.A.C. alone, predefined sets are used.
-
+// Turns a USEC PMC with any female part (usually the voice) fully female, so bots never get
+// a female voice on a male head. Needs W.A.A.C. for the heads; DLC.FemaleClothes is optional.
 [Injectable(TypePriority = OnLoadOrder.GameCallbacks + 3)]
 public class FemalePmcAppearanceService(
     TemplateTable templateTable,
@@ -31,15 +21,11 @@ public class FemalePmcAppearanceService(
     RandomUtil randomUtil
 ) : IOnLoad
 {
-    // 50% predefined set, 50% random USEC mix when both mods are loaded.
+    // Only used when DLC.FemaleClothes is loaded; W.A.A.C. alone always uses a predefined set.
     private const int PredefinedSetChancePercent = 50;
 
-    // This mod's own voice. Always available.
     private const string FemaleUsecVoiceId = "67a1c4f2e8b3d5a09f12c7b4";
 
-    // -------------------------------------------------------------------------
-    // Voices provided by W.A.A.C.
-    // -------------------------------------------------------------------------
     private static readonly List<string> WacVoiceIds =
     [
         "6749e134736238b84464bb7f", // Nadya
@@ -48,9 +34,6 @@ public class FemalePmcAppearanceService(
         "6749e1385477cbdf06903338", // Zoey
     ];
 
-    // -------------------------------------------------------------------------
-    // Female heads (provided by W.A.A.C.)
-    // -------------------------------------------------------------------------
     private static readonly List<string> FemaleHeadIds =
     [
         "6749e240101f7a863857863e",
@@ -66,9 +49,6 @@ public class FemalePmcAppearanceService(
         "6749e255a905c48df0c5011c",
     ];
 
-    // -------------------------------------------------------------------------
-    // Predefined outfits (provided by W.A.A.C.)
-    // -------------------------------------------------------------------------
     private static readonly List<ClothingSet> PredefinedSets =
     [
         new("67480383b253d50226f3becd", "674803a3e68064334083a248", "67480396eda19f232a648533"), // Lara
@@ -83,9 +63,6 @@ public class FemalePmcAppearanceService(
         new("6748042d8cca47dd189736c2", "67480433b9078bef9c64344f", "6748042eadfa4ceed5e748f9"), // Zoey Zombie
     ];
 
-    // -------------------------------------------------------------------------
-    // USEC-only randomized pools (provided by DLC.FemaleClothes)
-    // -------------------------------------------------------------------------
     private static readonly List<string> UsecTopIds =
     [
         "679ebe6eee23f42164000049", // USEC Adaptive Combat
@@ -152,9 +129,6 @@ public class FemalePmcAppearanceService(
         "679ebe6eee23f42164000175",
     ];
 
-    // -------------------------------------------------------------------------
-    // Combined lookup sets for "is this already female?" checks.
-    // -------------------------------------------------------------------------
     private static readonly List<string> AllFemaleVoiceIds = [FemaleUsecVoiceId, .. WacVoiceIds];
     private static readonly HashSet<string> FemaleVoiceSet  = new(AllFemaleVoiceIds);
     private static readonly HashSet<string> FemaleHeadSet   = new(FemaleHeadIds);
@@ -162,9 +136,6 @@ public class FemalePmcAppearanceService(
     private static readonly HashSet<string> FemaleBottomSet = new(PredefinedSets.Select(s => s.BottomId).Concat(UsecBottomIds));
     private static readonly HashSet<string> FemaleHandsSet  = new(PredefinedSets.Select(s => s.HandsId).Concat(UsecHandsIds));
 
-    // -------------------------------------------------------------------------
-    // Runtime state set in OnLoad.
-    // -------------------------------------------------------------------------
     private static ISptLogger<FemalePmcAppearanceService> _logger = null!;
     private static RandomUtil _rng = null!;
     private static TemplateTable _templates = null!;
@@ -197,36 +168,27 @@ public class FemalePmcAppearanceService(
         return Task.CompletedTask;
     }
 
-    // Neither mod adds its parts to the bot pools, only to the customization table, and
-    // they may register after us, so look once when the first bot is generated.
+    // Neither mod adds its parts to the bot pools, only to the customization table, and they
+    // may register after us, so look once when the first bot is generated.
     private static void DetectMods()
     {
         lock (DetectLock)
         {
             if (_detected) return;
-            DetectModsLocked();
+
+            var ids = _templates.Customization.Keys.Select(k => k.ToString()).ToHashSet();
+            _wacAvailable = FemaleHeadIds.Any(ids.Contains);
+            _dlcAvailable = UsecTopIds.Any(ids.Contains);
+
+            if (_wacAvailable)
+                _logger.Info($"[FemalePmcAppearance] W.A.A.C. found, DLC.FemaleClothes {(_dlcAvailable ? "found" : "not found")}.");
+            else
+                _logger.Warning("[FemalePmcAppearance] W.A.A.C. not found (it provides the female heads). Appearance completion disabled.");
+
             _detected = true;
         }
     }
 
-    private static void DetectModsLocked()
-    {
-        var ids = _templates.Customization.Keys.Select(k => k.ToString()).ToHashSet();
-        _wacAvailable = FemaleHeadIds.Any(ids.Contains);
-        _dlcAvailable = UsecTopIds.Any(ids.Contains);
-
-        if (!_wacAvailable)
-            _logger.Warning(
-                "[FemalePmcAppearance] W.A.A.C. not found (it provides the female heads). " +
-                "Appearance completion disabled.");
-        else
-            _logger.Info(
-                $"[FemalePmcAppearance] W.A.A.C.: {(_wacAvailable ? "found" : "not found")}, " +
-                $"DLC.FemaleClothes: {(_dlcAvailable ? "found" : "not found")}.");
-    }
-
-    // If a generated USEC PMC has any female part, force the remaining parts to also be female.
-    // Fully male bots are left alone; fully female bots need no changes.
     private static void PrepareAndGenerateBotPostfix(ref BotBase __result, BotGenerationDetails botGenerationDetails)
     {
         try
@@ -239,16 +201,15 @@ public class FemalePmcAppearanceService(
             var cust = __result.Customization;
             if (cust is null) return;
 
-            var headFemale  = FemaleHeadSet.Contains(cust.Head ?? "");
-            var voiceFemale = FemaleVoiceSet.Contains(cust.Voice ?? "");
-            var bodyFemale  = FemaleTopSet.Contains(cust.Body ?? "");
-            var feetFemale  = FemaleBottomSet.Contains(cust.Feet ?? "");
-            var handsFemale = FemaleHandsSet.Contains(cust.Hands ?? "");
+            var headFemale  = IsIn(FemaleHeadSet, cust.Head);
+            var voiceFemale = IsIn(FemaleVoiceSet, cust.Voice);
+            var bodyFemale  = IsIn(FemaleTopSet, cust.Body);
+            var feetFemale  = IsIn(FemaleBottomSet, cust.Feet);
+            var handsFemale = IsIn(FemaleHandsSet, cust.Hands);
 
             var anyFemale = headFemale || voiceFemale || bodyFemale || feetFemale || handsFemale;
             var allFemale = headFemale && voiceFemale && bodyFemale && feetFemale && handsFemale;
 
-            // Fully male - not our case. Fully female - already done.
             if (!anyFemale || allFemale) return;
 
             if (!headFemale)
@@ -270,7 +231,9 @@ public class FemalePmcAppearanceService(
         }
     }
 
-    private static void ApplyPredefinedSet(SPTarkov.Server.Core.Models.Eft.Common.Tables.Customization cust)
+    private static bool IsIn(HashSet<string> set, MongoId? id) => id is { } v && set.Contains(v);
+
+    private static void ApplyPredefinedSet(BotCustomization cust)
     {
         var set = _rng.GetArrayValue(PredefinedSets);
         cust.Body  = set.TopId;
@@ -278,7 +241,7 @@ public class FemalePmcAppearanceService(
         cust.Hands = set.HandsId;
     }
 
-    private static void ApplyRandomUsecMix(SPTarkov.Server.Core.Models.Eft.Common.Tables.Customization cust)
+    private static void ApplyRandomUsecMix(BotCustomization cust)
     {
         cust.Body  = _rng.GetArrayValue(UsecTopIds);
         cust.Feet  = _rng.GetArrayValue(UsecBottomIds);

@@ -31,9 +31,8 @@ public record ModMetadata : IModMetadata
     public List<string>? Incompatibilities { get; init; }
 }
 
-// 4.1 dropped PostDBModLoader. Its slot was between GameCallbacks and TraderRegistration,
-// and crucially before SaveCallbacks: the voice has to exist in the DB before profiles are
-// read, or an unknown voice id gets reset to a vanilla one.
+// Must run before SaveCallbacks: profiles are validated there, and an unknown voice id gets
+// reset to a vanilla one.
 [Injectable(TypePriority = OnLoadOrder.GameCallbacks + 2)]
 public class FemalePMCVoiceMod(
     WTTServerCommonLib.WTTServerCommonLib wttCommon,
@@ -41,7 +40,7 @@ public class FemalePMCVoiceMod(
     ISptLogger<FemalePMCVoiceMod> logger
 ) : IOnLoad
 {
-    // Customization item ID (outer key in db/CustomVoices/female_pmc.json).
+    // Outer key in db/CustomVoices/female_pmc.json.
     private const string VoiceId = "67a1c4f2e8b3d5a09f12c7b4";
 
     // Resolved from the DLL so a renamed mod folder still finds its config.
@@ -57,9 +56,7 @@ public class FemalePMCVoiceMod(
 
     public async Task OnLoadAsync(CancellationToken cancellationToken)
     {
-        var assembly = Assembly.GetExecutingAssembly();
-        await wttCommon.CustomVoiceService.CreateCustomVoices(assembly);
-
+        await wttCommon.CustomVoiceService.CreateCustomVoices(Assembly.GetExecutingAssembly());
         AddVoiceToBotPool(LoadConfig());
     }
 
@@ -72,9 +69,8 @@ public class FemalePMCVoiceMod(
             return;
         }
 
-        foreach (var botTypeName in cfg.BotTypes)
+        foreach (var key in cfg.BotTypes.Select(NormalizeBotType).Distinct())
         {
-            var key = botTypeName.ToLowerInvariant();
             if (!botTable.Types.TryGetValue(key, out var botType))
             {
                 logger.Warning($"[FemalePMCVoice] bot type '{key}' not in the database - skipped.");
@@ -88,8 +84,7 @@ public class FemalePMCVoiceMod(
                 continue;
             }
 
-            // Weight is relative to whatever else is in the pool, so derive it from the current
-            // total instead of hardcoding a number that silently drifts when other mods add voices.
+            // Derived from the current total so the share holds when other mods add voices.
             voice.Remove(new MongoId(VoiceId));
             var othersTotal = voice.Values.Sum();
             if (othersTotal <= 0d)
@@ -106,6 +101,19 @@ public class FemalePMCVoiceMod(
             logger.Success(
                 $"[FemalePMCVoice] '{key}': weight {weight} of {othersTotal + weight} -> {actual:F1}% of bots.");
         }
+    }
+
+    // PMCs are generated from the side template (usec/bear), not pmcusec/pmcbear, so
+    // configs from 1.0.5 and earlier pointed at a pool that is never rolled.
+    private static string NormalizeBotType(string name)
+    {
+        var key = name.ToLowerInvariant();
+        return key switch
+        {
+            "pmcusec" => "usec",
+            "pmcbear" => "bear",
+            _ => key,
+        };
     }
 
     private VoiceConfig LoadConfig()
@@ -133,5 +141,5 @@ public record VoiceConfig
     public double BotVoiceChancePercent { get; init; } = 15d;
 
     [JsonPropertyName("botTypes")]
-    public List<string> BotTypes { get; init; } = ["pmcusec"];
+    public List<string> BotTypes { get; init; } = ["usec"];
 }
